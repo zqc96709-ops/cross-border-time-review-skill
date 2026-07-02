@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write one daily review entry to the Feishu/Lark online workbook."""
+"""Create one daily-review record in the Feishu/Lark Base version of this system."""
 
 from __future__ import annotations
 
@@ -11,68 +11,83 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
-DEFAULT_SPREADSHEET_TOKEN = ""
-REVIEW_SHEET_ID = "l4b0oN"
-REVIEW_SHEET_NAME = "每日复盘"
-MAX_REVIEW_ROW = 120
+REVIEW_TABLE = "每日复盘"
+TIMEZONE = ZoneInfo("Asia/Shanghai")
+DISTRACTIONS = ["手机/短视频", "平台消息", "客户消息", "临时想法", "工具问题", "家务/生活", "疲劳拖延", "其他", ""]
 
 
-def run_lark(args: list[str], stdin: str | None = None) -> dict:
-    proc = subprocess.run(args, input=stdin, text=True, capture_output=True)
+def run_lark(args: list[str]) -> dict:
+    proc = subprocess.run(args, text=True, capture_output=True)
     if proc.returncode != 0:
         raise RuntimeError(f"lark-cli failed: {' '.join(args)}\n{proc.stdout}\n{proc.stderr}")
     return json.loads(proc.stdout)
 
 
 def today() -> str:
-    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    return datetime.now(TIMEZONE).date().isoformat()
 
 
-def normalize_score(value: str | None, field: str) -> str:
+def normalize_score(value: str | None, field: str) -> int | None:
     if value in (None, ""):
-        return ""
+        return None
     value = str(value).strip()
     if value not in {"1", "2", "3", "4", "5"}:
         raise SystemExit(f"{field} must be 1-5, got {value}")
-    return value
+    return int(value)
 
 
-def normalize_completion(value: str | None) -> str:
+def normalize_completion(value: str | None) -> float | int | None:
     if not value:
-        return ""
-    value = str(value).strip()
-    mapping = {"0": "0%", "25": "25%", "50": "50%", "75": "75%", "100": "100%"}
-    if value in mapping:
-        return mapping[value]
-    if value in {"0%", "25%", "50%", "75%", "100%"}:
-        return value
-    raise SystemExit("completion must be one of 0%, 25%, 50%, 75%, 100%")
+        return None
+    value = str(value).strip().replace("%", "")
+    mapping = {"0": 0, "25": 0.25, "50": 0.5, "75": 0.75, "100": 1}
+    if value not in mapping:
+        raise SystemExit("completion must be one of 0%, 25%, 50%, 75%, 100%")
+    return mapping[value]
 
 
-def row_for_date(token: str, target_date: str) -> int:
-    payload = run_lark([
-        "lark-cli", "sheets", "+cells-get",
-        "--as", "user",
-        "--spreadsheet-token", token,
-        "--sheet-id", REVIEW_SHEET_ID,
-        "--range", f"A2:A{MAX_REVIEW_ROW}",
-        "--include", "value",
-        "--json",
-    ])
-    rng = payload.get("data", {}).get("ranges", [{}])[0]
-    cells = rng.get("cells", [])
-    rows = rng.get("row_indices", [])
-    for idx, row in enumerate(cells):
-        row_num = rows[idx] if idx < len(rows) else idx + 2
-        value = str(row[0].get("value", "")) if row else ""
-        if value[:10] == target_date:
-            return int(row_num)
-    raise SystemExit(f"Date {target_date} was not found in {REVIEW_SHEET_NAME}!A2:A{MAX_REVIEW_ROW}.")
+def date_parts(date_value: str) -> tuple[str, str, str]:
+    parsed = datetime.strptime(date_value, "%Y-%m-%d").date()
+    iso_year, iso_week, _ = parsed.isocalendar()
+    return parsed.isoformat(), f"{iso_year}-W{iso_week:02d}", parsed.strftime("%Y-%m")
+
+
+def build_fields(args: argparse.Namespace) -> dict:
+    date_value = args.date or today()
+    day, week, month = date_parts(date_value)
+    fields = {
+        "复盘标题": f"{day} 日复盘",
+        "日期": day,
+        "年周": week,
+        "月份": month,
+        "今日主线任务": args.main_task,
+        "今日产出": args.outputs or "",
+        "最大时间黑洞": args.time_sink or "",
+        "明日主线任务": args.tomorrow_main or "",
+        "明日第一步动作": args.tomorrow_first_step or "",
+        "一句话结论": args.conclusion or "",
+    }
+    completion = normalize_completion(args.completion)
+    if completion is not None:
+        fields["主线完成度"] = completion
+    focus = normalize_score(args.focus, "focus")
+    energy = normalize_score(args.energy, "energy")
+    satisfaction = normalize_score(args.satisfaction, "satisfaction")
+    if focus is not None:
+        fields["专注评分"] = focus
+    if energy is not None:
+        fields["能量评分"] = energy
+    if satisfaction is not None:
+        fields["满意度"] = satisfaction
+    if args.distraction:
+        fields["最大干扰源"] = args.distraction if args.distraction in DISTRACTIONS else "其他"
+    return fields
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spreadsheet-token", default=None)
+    parser.add_argument("--base-token", default=None, help="Feishu Base token. Defaults to CBTR_BASE_TOKEN.")
+    parser.add_argument("--table-id", default=REVIEW_TABLE, help="Base table id or name. Defaults to 每日复盘.")
     parser.add_argument("--date", default=None)
     parser.add_argument("--main-task", required=True)
     parser.add_argument("--completion", default="")
@@ -91,44 +106,23 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    token = args.spreadsheet_token or os.environ.get("CBTR_SPREADSHEET_TOKEN") or DEFAULT_SPREADSHEET_TOKEN
-    if not token:
-        raise SystemExit("Set --spreadsheet-token or CBTR_SPREADSHEET_TOKEN before writing to Feishu/Lark.")
-    date_value = args.date or today()
-    row = row_for_date(token, date_value)
-    cells = [[
-        {},
-        {"value": args.main_task},
-        {"value": normalize_completion(args.completion)},
-        {"value": args.outputs},
-        {"value": args.time_sink},
-        {"value": args.distraction},
-        {"value": args.tomorrow_main},
-        {"value": args.tomorrow_first_step},
-        {"value": normalize_score(args.focus, "focus")},
-        {"value": normalize_score(args.energy, "energy")},
-        {"value": normalize_score(args.satisfaction, "satisfaction")},
-        {"value": args.conclusion},
-    ]]
+    base_token = args.base_token or os.environ.get("CBTR_BASE_TOKEN")
+    if not base_token:
+        raise SystemExit("Set --base-token or CBTR_BASE_TOKEN before writing to Feishu Base.")
+    fields = build_fields(args)
+    payload = {"base_token": base_token, "table_id": args.table_id, "fields": fields}
     if args.dry_run:
-        print(json.dumps({"row": row, "range": f"A{row}:L{row}", "cells": cells}, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
-    run_lark([
-        "lark-cli", "sheets", "+cells-set",
+    result = run_lark([
+        "lark-cli", "base", "+record-upsert",
         "--as", "user",
-        "--spreadsheet-token", token,
-        "--sheet-id", REVIEW_SHEET_ID,
-        "--range", f"A{row}:L{row}",
-        "--cells", "-",
-        "--json",
-    ], json.dumps(cells, ensure_ascii=False))
-    print(json.dumps({
-        "ok": True,
-        "spreadsheet_url": f"https://my.feishu.cn/sheets/{token}",
-        "sheet": REVIEW_SHEET_NAME,
-        "row": row,
-        "date": date_value,
-    }, ensure_ascii=False, indent=2))
+        "--base-token", base_token,
+        "--table-id", args.table_id,
+        "--json", json.dumps(fields, ensure_ascii=False),
+        "--format", "json",
+    ])
+    print(json.dumps({"ok": True, "table": args.table_id, "fields": fields, "result": result}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

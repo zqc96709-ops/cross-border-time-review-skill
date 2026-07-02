@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append one time-log entry to the Feishu/Lark online workbook."""
+"""Create one time-log record in the Feishu/Lark Base version of this system."""
 
 from __future__ import annotations
 
@@ -7,16 +7,12 @@ import argparse
 import json
 import os
 import subprocess
-import sys
-from datetime import datetime
-from pathlib import Path
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 
-DEFAULT_SPREADSHEET_TOKEN = ""
-TIME_SHEET_ID = "k2Hjnb"
-TIME_SHEET_NAME = "时间记录"
-MAX_TIME_ROW = 600
+TIME_TABLE = "时间记录"
+TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 CATEGORIES = [
     "选品/市场调研",
@@ -33,6 +29,22 @@ CATEGORIES = [
     "休息/生活",
     "干扰/刷信息",
 ]
+
+WORK_TYPE_BY_CATEGORY = {
+    "选品/市场调研": "推进型",
+    "上架/Listing优化": "推进型",
+    "广告/数据分析": "推进型",
+    "内容素材": "推进型",
+    "供应链/采购": "推进型",
+    "客服/售后": "维护型",
+    "订单/物流": "维护型",
+    "财务/记账": "维护型",
+    "学习/资料整理": "学习型",
+    "沟通/会议": "维护型",
+    "行政/工具/杂事": "杂事",
+    "休息/生活": "休息",
+    "干扰/刷信息": "干扰",
+}
 
 DISTRACTIONS = ["手机/短视频", "平台消息", "客户消息", "临时想法", "工具问题", "家务/生活", "疲劳拖延", "其他", ""]
 
@@ -53,38 +65,41 @@ CATEGORY_KEYWORDS = [
 ]
 
 
-def run_lark(args: list[str], stdin: str | None = None) -> dict:
-    proc = subprocess.run(args, input=stdin, text=True, capture_output=True)
+def run_lark(args: list[str]) -> dict:
+    proc = subprocess.run(args, text=True, capture_output=True)
     if proc.returncode != 0:
-        raise RuntimeError(
-            "lark-cli failed\n"
-            f"command: {' '.join(args)}\n"
-            f"stdout: {proc.stdout}\n"
-            f"stderr: {proc.stderr}"
-        )
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"lark-cli returned non-JSON output: {proc.stdout}") from exc
+        raise RuntimeError(f"lark-cli failed: {' '.join(args)}\n{proc.stdout}\n{proc.stderr}")
+    return json.loads(proc.stdout)
 
 
 def today() -> str:
-    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    return datetime.now(TIMEZONE).date().isoformat()
 
 
-def normalize_time(value: str) -> str:
+def parse_clock(value: str) -> time:
     value = value.strip()
-    if not value:
-        return value
     for fmt in ("%H:%M", "%H点%M", "%H点"):
         try:
-            parsed = datetime.strptime(value, fmt)
-            return parsed.strftime("%H:%M")
+            return datetime.strptime(value, fmt).time()
         except ValueError:
             pass
     if value.isdigit() and 0 <= int(value) <= 23:
-        return f"{int(value):02d}:00"
-    return value
+        return time(hour=int(value))
+    raise SystemExit(f"Invalid time: {value}. Use HH:MM, e.g. 09:00.")
+
+
+def hours_between(start: str, end: str) -> float:
+    start_t = parse_clock(start)
+    end_t = parse_clock(end)
+    start_minutes = start_t.hour * 60 + start_t.minute
+    end_minutes = end_t.hour * 60 + end_t.minute
+    if end_minutes < start_minutes:
+        end_minutes += 24 * 60
+    return round((end_minutes - start_minutes) / 60, 2)
+
+
+def normalize_time(value: str) -> str:
+    return parse_clock(value).strftime("%H:%M")
 
 
 def infer_category(text: str) -> str:
@@ -107,134 +122,107 @@ def normalize_category(category: str | None, text: str) -> str:
     raise SystemExit(f"Unknown category: {category}. Valid categories: {', '.join(CATEGORIES)}")
 
 
-def normalize_score(value: str | None, name: str) -> str:
+def normalize_score(value: str | None, field: str) -> int | None:
     if value in (None, ""):
-        return ""
+        return None
     value = str(value).strip()
     if value not in {"1", "2", "3", "4", "5"}:
-        raise SystemExit(f"{name} must be 1-5, got {value}")
-    return value
+        raise SystemExit(f"{field} must be 1-5, got {value}")
+    return int(value)
 
 
 def normalize_yes_no(value: str | None) -> str:
     if not value:
         return "否"
     value = value.strip().lower()
-    if value in {"是", "yes", "y", "true", "1", "主线"}:
-        return "是"
-    return "否"
+    return "是" if value in {"是", "yes", "y", "true", "1", "主线"} else "否"
 
 
-def next_empty_row(token: str) -> int:
-    payload = run_lark([
-        "lark-cli", "sheets", "+cells-get",
-        "--as", "user",
-        "--spreadsheet-token", token,
-        "--sheet-id", TIME_SHEET_ID,
-        "--range", f"A2:A{MAX_TIME_ROW}",
-        "--include", "value",
-        "--json",
-    ])
-    ranges = payload.get("data", {}).get("ranges", [])
-    if not ranges:
-        return 2
-    cells = ranges[0].get("cells", [])
-    row_indices = ranges[0].get("row_indices", [])
-    for idx, row in enumerate(cells):
-        row_number = row_indices[idx] if idx < len(row_indices) else idx + 2
-        if not row or not row[0].get("value"):
-            return int(row_number)
-    raise SystemExit(f"No empty row found in {TIME_SHEET_NAME}!A2:A{MAX_TIME_ROW}. Extend the sheet first.")
+def date_parts(date_value: str) -> tuple[str, str, str]:
+    parsed = datetime.strptime(date_value, "%Y-%m-%d").date()
+    iso_year, iso_week, _ = parsed.isocalendar()
+    return parsed.isoformat(), f"{iso_year}-W{iso_week:02d}", parsed.strftime("%Y-%m")
 
 
-def append_entry(args: argparse.Namespace) -> int:
-    token = args.spreadsheet_token or os.environ.get("CBTR_SPREADSHEET_TOKEN") or DEFAULT_SPREADSHEET_TOKEN
-    if not token:
-        raise SystemExit("Set --spreadsheet-token or CBTR_SPREADSHEET_TOKEN before writing to Feishu/Lark.")
+def build_fields(args: argparse.Namespace) -> dict:
+    date_value = args.date or today()
+    day, week, month = date_parts(date_value)
+    start = normalize_time(args.start)
+    end = normalize_time(args.end)
+    duration = hours_between(start, end)
     text_for_category = " ".join([args.task or "", args.output or "", args.note or ""])
     category = normalize_category(args.category, text_for_category)
+    main = normalize_yes_no(args.main)
     distraction = args.distraction or ""
     if distraction and distraction not in DISTRACTIONS:
         distraction = "其他"
-    row = args.row or next_empty_row(token)
-    date_value = args.date or today()
-    start = normalize_time(args.start)
-    end = normalize_time(args.end)
-    values = [[
-        {"value": date_value},
-        {},
-        {"value": start},
-        {"value": end},
-        {},
-        {"value": category},
-        {},
-        {"value": normalize_yes_no(args.main)},
-        {"value": args.task},
-        {"value": args.output or ""},
-        {"value": normalize_score(args.energy, "energy")},
-        {"value": normalize_score(args.focus, "focus")},
-        {"value": distraction},
-        {"value": args.note or ""},
-    ]]
-    if args.dry_run:
-        print(json.dumps({
-            "spreadsheet_token": token,
-            "sheet": TIME_SHEET_NAME,
-            "row": row,
-            "range": f"A{row}:N{row}",
-            "values": values,
-        }, ensure_ascii=False, indent=2))
-        return row
-    run_lark([
-        "lark-cli", "sheets", "+cells-set",
-        "--as", "user",
-        "--spreadsheet-token", token,
-        "--sheet-id", TIME_SHEET_ID,
-        "--range", f"A{row}:N{row}",
-        "--cells", "-",
-        "--json",
-    ], json.dumps(values, ensure_ascii=False))
-    print(json.dumps({
-        "ok": True,
-        "spreadsheet_url": f"https://my.feishu.cn/sheets/{token}",
-        "sheet": TIME_SHEET_NAME,
-        "row": row,
-        "date": date_value,
-        "start": start,
-        "end": end,
-        "category": category,
-        "main": normalize_yes_no(args.main),
-        "task": args.task,
-        "output": args.output or "",
-    }, ensure_ascii=False, indent=2))
-    return row
+    title = f"{day} {start}-{end} {args.task[:32]}"
+    fields = {
+        "记录标题": title,
+        "日期": day,
+        "年周": week,
+        "月份": month,
+        "开始时间": start,
+        "结束时间": end,
+        "时长": duration,
+        "类别": category,
+        "工作类型": WORK_TYPE_BY_CATEGORY[category],
+        "是否主线": main,
+        "任务": args.task,
+        "产出": args.output or "",
+        "非主线时长过长": "是" if main == "否" and duration >= args.non_main_threshold else "否",
+        "备注": args.note or "",
+    }
+    focus = normalize_score(args.focus, "focus")
+    energy = normalize_score(args.energy, "energy")
+    if focus is not None:
+        fields["专注评分"] = focus
+    if energy is not None:
+        fields["精力评分"] = energy
+    if distraction:
+        fields["干扰源"] = distraction
+    return fields
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spreadsheet-token", default=None)
+    parser.add_argument("--base-token", default=None, help="Feishu Base token. Defaults to CBTR_BASE_TOKEN.")
+    parser.add_argument("--table-id", default=TIME_TABLE, help="Base table id or name. Defaults to 时间记录.")
     parser.add_argument("--date", default=None, help="YYYY-MM-DD. Defaults to today in Asia/Shanghai.")
-    parser.add_argument("--start", required=True, help="Start time, e.g. 09:00.")
-    parser.add_argument("--end", required=True, help="End time, e.g. 10:00.")
+    parser.add_argument("--start", required=True)
+    parser.add_argument("--end", required=True)
     parser.add_argument("--category", default=None, choices=CATEGORIES)
     parser.add_argument("--main", default="否", help="是/否")
-    parser.add_argument("--task", required=True, help="What was done.")
-    parser.add_argument("--output", default="", help="Concrete result/output.")
-    parser.add_argument("--energy", default="", help="1-5")
-    parser.add_argument("--focus", default="", help="1-5")
-    parser.add_argument("--distraction", default="", help="Optional distraction source.")
+    parser.add_argument("--task", required=True)
+    parser.add_argument("--output", default="")
+    parser.add_argument("--energy", default="")
+    parser.add_argument("--focus", default="")
+    parser.add_argument("--distraction", default="")
     parser.add_argument("--note", default="")
-    parser.add_argument("--row", type=int, default=None, help="Override target row for repair/testing.")
+    parser.add_argument("--non-main-threshold", type=float, default=1.5, help="Hours after which non-main work is flagged.")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
-    try:
-        append_entry(parse_args())
-    except Exception as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(1) from exc
+    args = parse_args()
+    base_token = args.base_token or os.environ.get("CBTR_BASE_TOKEN")
+    if not base_token:
+        raise SystemExit("Set --base-token or CBTR_BASE_TOKEN before writing to Feishu Base.")
+    fields = build_fields(args)
+    payload = {"base_token": base_token, "table_id": args.table_id, "fields": fields}
+    if args.dry_run:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    result = run_lark([
+        "lark-cli", "base", "+record-upsert",
+        "--as", "user",
+        "--base-token", base_token,
+        "--table-id", args.table_id,
+        "--json", json.dumps(fields, ensure_ascii=False),
+        "--format", "json",
+    ])
+    print(json.dumps({"ok": True, "table": args.table_id, "fields": fields, "result": result}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

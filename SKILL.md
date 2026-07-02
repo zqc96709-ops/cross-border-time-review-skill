@@ -1,40 +1,46 @@
 ---
 name: cross-border-time-review
-description: "Create and maintain a visual time-tracking, daily review, and weekly review system for solo cross-border e-commerce sellers, including Excel generation and Feishu/Lark online-sheet logging. Use when the user wants to record hourly time use from chat, write time entries or daily reviews into the Feishu sheet automatically, see category proportions with charts, visualize daily reviews, track focus/main-task completion, or regenerate/customize the workbook for ecommerce operations."
+description: "Create and maintain a visual time-tracking, daily review, weekly review, and Feishu/Lark Base dashboard system for solo cross-border e-commerce sellers. Use when the user wants to record hourly time use from chat, write time entries or daily reviews into Feishu Base automatically, create Base tables/dashboards with bar/pie/line charts, track main vs non-main time, analyze daily/weekly/monthly category proportions and trends, or generate an Excel fallback workbook."
 ---
 
 # Cross-Border Time Review
 
-Use this skill to help a solo cross-border e-commerce seller build or update a visual time-management and daily-review system.
+Use this skill to help a solo cross-border e-commerce seller record time from chat and visualize focus in Feishu/Lark Base.
 
-## Quick Start
+## Primary Workflow: Feishu Base
 
-Generate a workbook with the bundled script:
+Prefer the Base workflow over ordinary Feishu Sheets. Base supports richer data entry, durable fields, views, and dashboards.
 
-```bash
-python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/create_workbook.py \
-  --output "$HOME/Desktop/跨境电商时间管理复盘模板.xlsx"
-```
-
-Common options:
+Create a new Base system:
 
 ```bash
-# Start the tracker on a specific date and create 120 daily review rows
-python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/create_workbook.py \
-  --start-date 2026-06-16 \
-  --days 120 \
-  --output "$HOME/Desktop/跨境电商时间管理复盘模板.xlsx"
+python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/create_lark_base.py \
+  --name "跨境电商时间管理与日复盘"
 ```
 
-If `openpyxl` is missing, use a Python environment that has it available, or install it into the active environment before running the script.
+The script creates:
 
-## Feishu/Lark Chat Logging
+- Table `时间记录`
+- Table `每日复盘`
+- Dashboard `时间投入与复盘仪表盘`
+- Dashboard blocks for category proportions, main vs non-main proportions, non-main overload, daily/weekly/monthly trends, and review score trends
 
-When the user chats from Feishu/Hermes and asks to record time, do not ask them to open the sheet. Parse their message, ask at most one clarification if required, then write the entry with:
+After creation, set the Base token for chat logging:
+
+```bash
+export CBTR_BASE_TOKEN="<base_token>"
+```
+
+Or pass `--base-token <base_token>` to the logging scripts.
+
+## Chat Time Logging
+
+When the user chats from Feishu/Hermes and asks to record time, do not ask them to open Base. Parse their message, ask at most one clarification if required, then write the entry with:
 
 ```bash
 python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/record_lark_time.py \
-  --date 2026-06-16 \
+  --base-token "<base_token>" \
+  --date 2026-07-01 \
   --start 09:00 \
   --end 10:00 \
   --task "调研日本猫玩具竞品，整理 8 个可测试方向" \
@@ -44,47 +50,47 @@ python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/
   --energy 4
 ```
 
-Configure the target Feishu spreadsheet before writing:
+The script writes a record to Base table `时间记录` with derived fields:
 
-- Preferred: set `CBTR_SPREADSHEET_TOKEN` in the Hermes runtime environment.
-- Alternative: pass `--spreadsheet-token <token>` on every script call.
-- Time sheet: `时间记录`
-- Review sheet: `每日复盘`
-
-Do not hard-code personal spreadsheet tokens into the skill before publishing or sharing it.
+- `年周`: ISO week such as `2026-W27`
+- `月份`: `YYYY-MM`
+- `时长`: calculated from start/end
+- `类别`: inferred when missing
+- `工作类型`: inferred from category
+- `非主线时长过长`: `是` when non-main time exceeds the threshold
 
 ### Required Time Entry Fields
 
-Require these fields before writing a time entry:
+Require these fields before writing:
 
-- `start` and `end`: time period, such as `09:00-10:00`.
-- `task`: what the user actually did.
+- `start` and `end`: time period, such as `09:00-10:00`
+- `task`: what the user actually did
 
-Strongly prefer, but do not require:
+Strongly prefer:
 
-- `output`: concrete result, even if it is "无明显产出".
-- `main`: whether it advanced today's main task (`是` or `否`).
-- `focus` and `energy`: 1-5 scores.
+- `output`: concrete result, even if it is `无明显产出`
+- `main`: whether it advanced today's main task (`是` or `否`)
+- `focus` and `energy`: 1-5 scores
+- `distraction`: if relevant
 
-If date is missing, default to today's date in Asia/Shanghai. If category is missing, infer it from the task text using the ecommerce categories below. If output is missing, write an empty output only if the user's message clearly says they just want the entry recorded; otherwise ask "这段有什么产出吗？可以写无明显产出。"
+If date is missing, default to today's date in Asia/Shanghai. If category is missing, infer it from the task text. If output is missing and the user did not explicitly say there was no output, ask: `这段有什么产出吗？可以写无明显产出。`
 
-### Natural Language Examples
-
-Accept messages like:
+Natural language examples:
 
 - `记录 9-10 点，调研日本猫玩具竞品，筛了 2 个方向，主线，专注 4，精力 4。`
 - `10:00-11:30 回复客户和处理售后，产出：解决 3 个咨询，不是主线，专注 3。`
 - `刚才 14-15 点刷选品视频，有点分心，没产出，干扰源手机/短视频。`
 
-For ambiguous periods such as `刚才一小时`, infer from the current time only if it is obvious in context; otherwise ask for the time range.
+For ambiguous periods such as `刚才一小时`, infer from current time only if obvious in context; otherwise ask for the time range.
 
-### Daily Review Logging
+## Daily Review Logging
 
-When the user says they want to do today's review, write `每日复盘` with:
+When the user says they want to do today's review, write to Base table `每日复盘`:
 
 ```bash
 python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/record_lark_review.py \
-  --date 2026-06-16 \
+  --base-token "<base_token>" \
+  --date 2026-07-01 \
   --main-task "完成 5 个新品调研" \
   --completion 75% \
   --outputs "调研 8 个竞品；筛出 2 个候选；优化 1 条 listing" \
@@ -100,21 +106,33 @@ python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/
 
 If the user gives a free-form review, extract fields. If `main-task`, `completion`, and at least one of `outputs` or `conclusion` cannot be inferred, ask a concise follow-up.
 
-## Workbook Design
+## Base Dashboard Design
 
-Create workbooks with these sheets:
+The Base dashboard should make these questions visible in real time:
 
-- `使用说明`: short usage guide for the user.
-- `时间记录`: the only daytime input sheet; record date, start/end time, category, work type, main-task flag, output, focus, energy, distraction.
-- `每日复盘`: the nightly review input sheet; record main task, completion rate, outputs, biggest time sink, distraction, tomorrow's main task, focus/energy/satisfaction scores.
-- `可视化仪表盘`: charts driven by a selected date, including category bar chart, category pie chart, work-type doughnut chart, 14-day trend line chart, and daily review radar chart.
-- `日汇总`: formula-based daily aggregation by category, work type, main-task hours, focus, energy, and review scores.
-- `周复盘`: weekly battle/goal review with aggregate hours and review averages.
-- `设置`: editable dropdown options for categories, work types, and distraction sources.
+- Today: category time proportion
+- Today: main vs non-main time proportion
+- Which non-main categories are taking too long
+- Daily time trend
+- Weekly category/time trend
+- Monthly work-type/time trend
+- Weekly and monthly total time trend
+- Daily review score trend
+
+The bundled `create_lark_base.py` creates dashboard blocks using Feishu Base components:
+
+- `statistics`: total tracked hours
+- `pie`: category time proportion
+- `ring`: main vs non-main time proportion
+- `bar`: non-main category overload
+- `bar`: categories where flagged non-main work is too long
+- `column`: daily category structure, daily main/non-main structure, weekly/monthly breakdowns
+- `line`: daily/weekly/monthly trends
+- `text`: usage note
 
 ## Ecommerce Categories
 
-Use categories that reflect a solo seller's real workflow:
+Use categories that reflect a solo seller's workflow:
 
 - `选品/市场调研`
 - `上架/Listing优化`
@@ -130,25 +148,14 @@ Use categories that reflect a solo seller's real workflow:
 - `休息/生活`
 - `干扰/刷信息`
 
-Classify categories into work types so the dashboard can show whether the user is pushing the business forward:
+Classify categories into work types:
 
-- `推进型`: selection, listing, ads/data, content, supply chain.
-- `维护型`: customer service, orders/logistics, finance, communication.
-- `学习型`: learning and knowledge organization.
-- `杂事`: admin, tools, account maintenance.
-- `休息`: meals, exercise, household, rest.
-- `干扰`: low-intent browsing or avoidant work.
-
-## Daily Coaching
-
-When explaining the workbook, keep the user's daily behavior simple:
-
-1. Fill `时间记录` during the day in 30-120 minute blocks.
-2. Fill `每日复盘` at night in 10 minutes.
-3. Use `可视化仪表盘!B3` to select a date and inspect the charts.
-4. Review `周复盘` once per week to check whether the week's main business battle moved forward.
-
-Avoid turning this into a complex productivity system. The goal is to reveal where time goes, whether the daily main task moved, and which maintenance or distraction patterns are consuming attention.
+- `推进型`: selection, listing, ads/data, content, supply chain
+- `维护型`: customer service, orders/logistics, finance, communication
+- `学习型`: learning and knowledge organization
+- `杂事`: admin, tools, account maintenance
+- `休息`: meals, exercise, household, rest
+- `干扰`: low-intent browsing or avoidant work
 
 ## User Instruction Format
 
@@ -181,3 +188,16 @@ Daily review format:
 专注/精力/满意度：4/3/4
 一句话结论：...
 ```
+
+## Excel Fallback
+
+Keep the local Excel generator as a fallback or offline template:
+
+```bash
+python3 /Users/mac/.hermes/skills/productivity/cross-border-time-review/scripts/create_workbook.py \
+  --start-date 2026-07-01 \
+  --days 120 \
+  --output "$HOME/Desktop/跨境电商时间管理复盘模板.xlsx"
+```
+
+Use Excel only when Feishu Base is unavailable or the user explicitly asks for a local workbook.

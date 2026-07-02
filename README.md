@@ -1,24 +1,28 @@
 # Cross-Border Time Review Skill
 
-面向个人跨境电商卖家的时间记录、日复盘与可视化仪表盘 Skill。
+面向个人跨境电商卖家的时间记录、日复盘与飞书多维表格可视化仪表盘 Skill。
 
-它可以让你不用手动打开表格，只需要在 Hermes / 飞书渠道里用自然语言说“我刚才做了什么”，Hermes 就能把时间记录或日复盘写入飞书在线表格，并通过仪表盘查看每天时间花费、推进型/维护型事务占比、近 14 天趋势和复盘评分。
+它的目标是：你不用手动打开表格，只要在 Hermes / 飞书渠道里用自然语言说“我刚才做了什么”，Hermes 就能把时间记录或日复盘写入飞书多维表格（Base），并通过 Base 仪表盘实时查看每天、每周、每月的时间花费占比和趋势。
 
 ## 适合谁
 
 - 个人在家做跨境电商，每天被选品、上架、广告、客服、物流、供应链等事情切碎。
 - 想知道每天时间到底花在了哪里。
-- 想减少手动填表成本，直接通过聊天记录工作。
-- 想每天晚上做日复盘，并把复盘结果可视化。
+- 想看到主线与非主线时间占比。
+- 想发现哪些非主线工作占用过长。
+- 想按日、周、月查看时间占比和趋势。
+- 想通过聊天记录工作，而不是手动填表。
 
 ## 核心能力
 
-- 生成本地 Excel 时间管理模板。
-- 将聊天中的时间记录自动写入飞书在线表格。
-- 将每日复盘自动写入飞书在线表格。
+- 创建飞书多维表格 Base。
+- 创建 `时间记录` 和 `每日复盘` 两张数据表。
+- 创建 Base 仪表盘，用柱状图、饼图、环形图、折线图展示时间分析。
+- 将聊天中的时间记录自动写入 Base。
+- 将每日复盘自动写入 Base。
 - 自动识别跨境电商工作类别，例如选品、Listing 优化、广告、供应链、客服、物流等。
 - 自动区分推进型、维护型、学习型、杂事、休息、干扰。
-- 通过飞书图表查看时间占比、类别耗时、工作类型结构、近 14 天趋势和复盘评分。
+- 自动生成 `年周`、`月份`、`时长`、`工作类型`、`非主线时长过长` 等分析字段。
 
 ## 安装到 Hermes
 
@@ -32,7 +36,7 @@ git clone https://github.com/zqc96709-ops/cross-border-time-review-skill.git \
 然后在 Hermes 中使用：
 
 ```text
-Use $cross-border-time-review to record my cross-border e-commerce time entry.
+Use $cross-border-time-review to create a Feishu Base time-review dashboard.
 ```
 
 ## 前置条件
@@ -41,32 +45,35 @@ Use $cross-border-time-review to record my cross-border e-commerce time entry.
 
 - `hermes`
 - `lark-cli`
-- 飞书用户身份授权，并具备表格读写权限
-- 一个符合本 Skill 结构的飞书在线表格
+- 飞书用户身份授权，并具备 Base 创建和读写权限
 
-飞书表格至少需要这些子表：
-
-- `时间记录`
-- `每日复盘`
-- `可视化仪表盘`
-- `日汇总`
-- `周复盘`
-- `设置`
-
-## 配置飞书表格 Token
-
-不要把个人飞书表格 token 写进仓库。推荐用环境变量：
+检查飞书授权：
 
 ```bash
-export CBTR_SPREADSHEET_TOKEN="你的飞书表格 token"
+lark-cli auth status
+```
+
+## 创建飞书多维表格 Base
+
+运行：
+
+```bash
+python3 scripts/create_lark_base.py \
+  --name "跨境电商时间管理与日复盘"
+```
+
+创建成功后脚本会输出 `base_token`。把它配置给 Hermes：
+
+```bash
+export CBTR_BASE_TOKEN="你的 base_token"
 ```
 
 也可以在脚本调用时传入：
 
 ```bash
 python3 scripts/record_lark_time.py \
-  --spreadsheet-token "你的飞书表格 token" \
-  --date 2026-06-16 \
+  --base-token "你的 base_token" \
+  --date 2026-07-01 \
   --start 09:00 \
   --end 10:00 \
   --task "调研日本猫玩具竞品" \
@@ -75,6 +82,68 @@ python3 scripts/record_lark_time.py \
   --focus 4 \
   --energy 4
 ```
+
+## Base 会创建什么
+
+### 数据表 1：时间记录
+
+核心字段：
+
+- `记录标题`
+- `日期`
+- `年周`
+- `月份`
+- `开始时间`
+- `结束时间`
+- `时长`
+- `类别`
+- `工作类型`
+- `是否主线`
+- `任务`
+- `产出`
+- `专注评分`
+- `精力评分`
+- `干扰源`
+- `非主线时长过长`
+- `备注`
+
+### 数据表 2：每日复盘
+
+核心字段：
+
+- `复盘标题`
+- `日期`
+- `年周`
+- `月份`
+- `今日主线任务`
+- `主线完成度`
+- `今日产出`
+- `最大时间黑洞`
+- `最大干扰源`
+- `明日主线任务`
+- `明日第一步动作`
+- `专注评分`
+- `能量评分`
+- `满意度`
+- `一句话结论`
+
+### 仪表盘
+
+默认创建这些可视化：
+
+- 总投入小时
+- 每天任务时间占比（按类别）
+- 主线与非主线时间占比
+- 非主线时间过长来源
+- 非主线过长记录占比
+- 每日时间趋势
+- 每日类别时间结构
+- 每日主线/非主线结构
+- 每周时间占比
+- 每月时间占比
+- 每周时间趋势
+- 每月时间趋势
+- 复盘评分趋势
 
 ## 日常怎么对 Hermes 说
 
@@ -116,9 +185,8 @@ python3 scripts/record_lark_time.py \
 Hermes 会写入：
 
 - 类别：`客服/售后`
-- 工作类型：由表格公式自动识别为 `维护型`
-- 时间：`10:00-11:30`
-- 产出：`解决3个咨询`
+- 工作类型：`维护型`
+- 时长：`1.5`
 - 是否主线：`否`
 - 专注：`3`
 - 精力：`4`
@@ -148,20 +216,19 @@ Hermes 会自动归类为：
 
 ## 脚本说明
 
-生成本地 Excel 模板：
+创建飞书 Base：
 
 ```bash
-python3 scripts/create_workbook.py \
-  --start-date 2026-06-16 \
-  --days 120 \
-  --output "$HOME/Desktop/跨境电商时间管理复盘模板.xlsx"
+python3 scripts/create_lark_base.py \
+  --name "跨境电商时间管理与日复盘"
 ```
 
-写入一条飞书时间记录：
+写入一条 Base 时间记录：
 
 ```bash
 python3 scripts/record_lark_time.py \
-  --date 2026-06-16 \
+  --base-token "你的 base_token" \
+  --date 2026-07-01 \
   --start 09:00 \
   --end 10:00 \
   --task "调研日本猫玩具竞品" \
@@ -171,11 +238,12 @@ python3 scripts/record_lark_time.py \
   --energy 4
 ```
 
-写入一条飞书日复盘：
+写入一条 Base 日复盘：
 
 ```bash
 python3 scripts/record_lark_review.py \
-  --date 2026-06-16 \
+  --base-token "你的 base_token" \
+  --date 2026-07-01 \
   --main-task "完成 5 个新品调研" \
   --completion 75% \
   --outputs "调研 8 个竞品；筛出 2 个候选；优化 1 条 listing" \
@@ -193,6 +261,7 @@ python3 scripts/record_lark_review.py \
 
 ```bash
 python3 scripts/record_lark_time.py \
+  --base-token "dummy" \
   --start 09:00 \
   --end 10:00 \
   --task "调研日本猫玩具竞品" \
@@ -226,9 +295,20 @@ python3 scripts/record_lark_time.py \
 - `休息`
 - `干扰`
 
+## Excel Fallback
+
+如果暂时不用飞书 Base，也可以生成本地 Excel 模板：
+
+```bash
+python3 scripts/create_workbook.py \
+  --start-date 2026-07-01 \
+  --days 120 \
+  --output "$HOME/Desktop/跨境电商时间管理复盘模板.xlsx"
+```
+
 ## 注意事项
 
-- 不要把个人飞书表格 token 提交到 GitHub。
-- 如果 Hermes 无法写入飞书表格，先确认 `lark-cli auth status` 中 user 身份可用。
+- 不要把个人 `base_token` 提交到 GitHub。
+- 如果 Hermes 无法写入 Base，先确认 `lark-cli auth status` 中 user 身份可用。
 - 如果缺少时间段，Hermes 应先追问，不要猜。
 - 如果没有产出，可以明确说 `无明显产出`，这比空着更有复盘价值。

@@ -1,6 +1,6 @@
 interface:
   display_name: "跨境电商时间复盘"
-  short_description: "飞书聊天自动记录时间与复盘到可视化表格"
-  default_prompt: "Use $cross-border-time-review to record my cross-border e-commerce time entry from chat into the Feishu visual review sheet."
+  short_description: "飞书Base自动记录时间复盘并生成可视化"
+  default_prompt: "Use $cross-border-time-review to create a Feishu Base dashboard and record my cross-border e-commerce time entry from chat."
 policy:
   allow_implicit_invocation: true
