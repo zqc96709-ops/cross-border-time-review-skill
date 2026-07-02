@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from cbtr_config import config_value, require_value
 
-REVIEW_TABLE = "每日复盘"
+REVIEW_TABLE = config_value("time_review", "review_table", "CBTR_REVIEW_TABLE", "每日复盘")
 TIMEZONE = ZoneInfo("Asia/Shanghai")
 DISTRACTIONS = ["手机/短视频", "平台消息", "客户消息", "临时想法", "工具问题", "家务/生活", "疲劳拖延", "其他", ""]
 
@@ -86,7 +86,7 @@ def build_fields(args: argparse.Namespace) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-token", default=None, help="Feishu Base token. Defaults to CBTR_BASE_TOKEN.")
+    parser.add_argument("--base-token", default=None, help="Feishu Base token. Defaults to CBTR_BASE_TOKEN or config/local.json.")
     parser.add_argument("--table-id", default=REVIEW_TABLE, help="Base table id or name. Defaults to 每日复盘.")
     parser.add_argument("--date", default=None)
     parser.add_argument("--main-task", required=True)
@@ -106,9 +106,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    base_token = args.base_token or os.environ.get("CBTR_BASE_TOKEN")
-    if not base_token:
-        raise SystemExit("Set --base-token or CBTR_BASE_TOKEN before writing to Feishu Base.")
+    base_token = require_value(
+        args.base_token or config_value("time_review", "base_token", "CBTR_BASE_TOKEN"),
+        "time-review Base token",
+        "CBTR_BASE_TOKEN",
+    )
     fields = build_fields(args)
     payload = {"base_token": base_token, "table_id": args.table_id, "fields": fields}
     if args.dry_run:

@@ -1,8 +1,8 @@
 # Cross-Border Time Review Skill
 
-面向个人跨境电商卖家的时间记录、日复盘与飞书多维表格可视化仪表盘 Skill。
+面向个人跨境电商卖家的时间记录、日复盘、费用记账、明日计划与飞书多维表格可视化仪表盘 Skill。
 
-它的目标是：你不用手动打开表格，只要在 Hermes / 飞书渠道里用自然语言说“我刚才做了什么”，Hermes 就能把时间记录或日复盘写入飞书多维表格（Base），并通过 Base 仪表盘实时查看每天、每周、每月的时间花费占比和趋势。
+它的目标是：你不用手动打开表格，只要在 Hermes / 飞书渠道里用自然语言说“我刚才做了什么”“今天复盘”“记一笔费用”“明天要做什么”，Hermes 就能把数据写入对应的飞书多维表格，并通过 Base 仪表盘实时查看每天、每周、每月的时间花费占比和趋势。
 
 ## 适合谁
 
@@ -12,6 +12,8 @@
 - 想发现哪些非主线工作占用过长。
 - 想按日、周、月查看时间占比和趋势。
 - 想通过聊天记录工作，而不是手动填表。
+- 想把费用记账写入 `费用明细`。
+- 想把明日计划和待办写入 `个人任务看板`。
 
 ## 核心能力
 
@@ -20,6 +22,8 @@
 - 创建 Base 仪表盘，用柱状图、饼图、环形图、折线图展示时间分析。
 - 将聊天中的时间记录自动写入 Base。
 - 将每日复盘自动写入 Base。
+- 将项目费用自动写入 `费用明细`。
+- 将明日计划和任务自动写入 `个人任务看板`。
 - 自动识别跨境电商工作类别，例如选品、Listing 优化、广告、供应链、客服、物流等。
 - 自动区分推进型、维护型、学习型、杂事、休息、干扰。
 - 自动生成 `年周`、`月份`、`时长`、`工作类型`、`非主线时长过长` 等分析字段。
@@ -53,7 +57,27 @@ Use $cross-border-time-review to create a Feishu Base time-review dashboard.
 lark-cli auth status
 ```
 
-## 创建飞书多维表格 Base
+## 默认写入目标
+
+日常使用会写入以下飞书资源。真实 Base token 和 table ID 放在本机私有配置 `config/local.json` 或环境变量里，不提交到 GitHub：
+
+- 时间记录与日复盘：`跨境电商时间管理复盘（多维表格版）`
+- 费用记账：`费用明细`
+- 明日计划/任务看板：`个人任务看板`
+
+旧飞书表格 `跨境电商时间管理复盘（在线版测试）` 只保留历史数据，不再作为新记录写入目标。
+
+本机私有配置格式见 `config/local.example.json`。也可以用环境变量覆盖：
+
+```bash
+export CBTR_BASE_TOKEN="时间记录与日复盘 Base token"
+export CBTR_EXPENSE_BASE_TOKEN="费用明细 Base token"
+export CBTR_EXPENSE_TABLE_ID="费用明细 table ID"
+export CBTR_TASK_BASE_TOKEN="个人任务看板 Base token"
+export CBTR_TASK_TABLE_ID="个人任务看板 table ID"
+```
+
+## 创建新的飞书多维表格 Base
 
 运行：
 
@@ -62,13 +86,13 @@ python3 scripts/create_lark_base.py \
   --name "跨境电商时间管理与日复盘"
 ```
 
-创建成功后脚本会输出 `base_token`。把它配置给 Hermes：
+如果你要另建一套系统，创建成功后脚本会输出 `base_token`。把它配置给 Hermes：
 
 ```bash
 export CBTR_BASE_TOKEN="你的 base_token"
 ```
 
-也可以在脚本调用时传入：
+配置好 `config/local.json` 后默认不需要传 token；脚本会写入配置的生产 Base。也可以在脚本调用时传入：
 
 ```bash
 python3 scripts/record_lark_time.py \
@@ -214,6 +238,28 @@ Hermes 会自动归类为：
 一句话结论：今天推进了选品，但维护型事务偏多
 ```
 
+日复盘写入后，Hermes 还应把 `明日主线` 拆成任务，去重后写入 `个人任务看板`。
+
+## 费用怎么说
+
+```text
+记账，今天刻公章花了120元，蓝胖子支付
+```
+
+至少告诉 Hermes：
+
+- 费用项目
+- 金额
+- 支付方式：`蓝胖子`、`欧易`、`招商信用卡`、`支付宝`
+
+## 任务怎么说
+
+```text
+记一个待办：明天去中国银行线下拿公户，重要紧急，工作
+```
+
+Hermes 会写入 `个人任务看板`，默认状态为 `未开始`。
+
 ## 脚本说明
 
 创建飞书 Base：
@@ -227,7 +273,6 @@ python3 scripts/create_lark_base.py \
 
 ```bash
 python3 scripts/record_lark_time.py \
-  --base-token "你的 base_token" \
   --date 2026-07-01 \
   --start 09:00 \
   --end 10:00 \
@@ -242,7 +287,6 @@ python3 scripts/record_lark_time.py \
 
 ```bash
 python3 scripts/record_lark_review.py \
-  --base-token "你的 base_token" \
   --date 2026-07-01 \
   --main-task "完成 5 个新品调研" \
   --completion 75% \
@@ -255,6 +299,28 @@ python3 scripts/record_lark_review.py \
   --energy 3 \
   --satisfaction 4 \
   --conclusion "今天推进了选品，但维护型事务偏多。"
+```
+
+写入一条费用：
+
+```bash
+python3 scripts/record_expense.py \
+  --item "刻公章" \
+  --amount 120 \
+  --payment 蓝胖子 \
+  --currency "¥" \
+  --date 6.25
+```
+
+写入一条任务：
+
+```bash
+python3 scripts/record_task.py \
+  --name "去中国银行线下拿公户" \
+  --status 未开始 \
+  --category 工作 \
+  --label "🔥 重要紧急" \
+  --detail "明日第一步"
 ```
 
 先预览不写入：
@@ -309,6 +375,7 @@ python3 scripts/create_workbook.py \
 ## 注意事项
 
 - 不要把个人 `base_token` 提交到 GitHub。
+- 不要把真实飞书 Base token、table ID、app secret、access token 或 cookie 提交到 GitHub。
 - 如果 Hermes 无法写入 Base，先确认 `lark-cli auth status` 中 user 身份可用。
 - 如果缺少时间段，Hermes 应先追问，不要猜。
 - 如果没有产出，可以明确说 `无明显产出`，这比空着更有复盘价值。

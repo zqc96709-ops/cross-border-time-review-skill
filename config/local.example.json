@@ -1,0 +1,15 @@
+{
+  "time_review": {
+    "base_token": "YOUR_TIME_REVIEW_BASE_TOKEN",
+    "time_table": "时间记录",
+    "review_table": "每日复盘"
+  },
+  "expense": {
+    "base_token": "YOUR_EXPENSE_BASE_TOKEN",
+    "table_id": "YOUR_EXPENSE_TABLE_ID"
+  },
+  "task": {
+    "base_token": "YOUR_TASK_BASE_TOKEN",
+    "table_id": "YOUR_TASK_TABLE_ID"
+  }
+}
